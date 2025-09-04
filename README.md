@@ -1,7 +1,5 @@
 # senior_gui
 
-<!-- ...existing code... -->
-
 ## Setting Up Python Virtual Environments
 
 This project uses two separate Python virtual environments:
@@ -92,14 +90,12 @@ Follow these steps to set up each environment and install dependencies:
 To run the Streamlit application:
 
 1. Ensure you are in the `interface` folder and have activated the `venv_interface` environment (as described above).
-2. Run the following command (replace `app.py` with the actual name of your main Streamlit file if different):
+2. Run the following command:
 
     ```sh
-    streamlit run app.py
+    streamlit run home.py
     ```
 
 3. The application should open in your default web browser.
 
 **Reminder:** Always activate the `venv_interface` environment before running the app to ensure the correct dependencies are used.
-
-<!-- ...existing code... -->
