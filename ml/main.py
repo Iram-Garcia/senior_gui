@@ -3,6 +3,7 @@ from ultralytics import YOLO
 import easyocr
 import time
 import os
+import shutil
 
 # Load YOLO model
 model = YOLO('LP-detection.pt')
@@ -33,6 +34,7 @@ def process_images_folder():
             results = model(img)
 
             text = "No plate detected"
+            confidence = 0.0
             if len(results[0].boxes) > 0:
                 # Crop first plate
                 boxes = results[0].boxes.xyxy[0]
@@ -42,16 +44,25 @@ def process_images_folder():
                 if license_plate_img.size > 0:
                     license_plate_img = cv2.convertScaleAbs(license_plate_img, alpha=1.3, beta=0)
 
-                    result = reader.readtext(license_plate_img, detail=0)
+                    result = reader.readtext(license_plate_img, detail=1)
                     if result:
-                        text = result[0]
+                        text = result[0][1]  # Extract text
+                        confidence = result[0][2]  # Extract confidence
 
             end_time = time.time()
             execution_time = end_time - start_time
 
             # Save log
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-            file.write(f"Image: {image_file}, Timestamp: {timestamp}, Execution Time: {execution_time:.2f}s, Text: {text}\n")
+            file.write(f"Image: {image_file}, Timestamp: {timestamp}, Execution Time: {execution_time:.2f}s, Text: {text}, Confidence: {confidence:.2f}\n")
+            print(f"Confidence for {image_file}: {confidence:.2f}")
+
+            # If confidence is below 50%, save the image for verification
+            if confidence < 0.5:
+                verification_folder = "../interface/need_verification"
+                os.makedirs(verification_folder, exist_ok=True)
+                timestamp_filename = timestamp.replace(":", "_") + "_" + image_file
+                shutil.copy(img_path, os.path.join(verification_folder, timestamp_filename))
 
 if __name__ == "__main__":
     process_images_folder()
