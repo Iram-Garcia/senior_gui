@@ -5,3 +5,5 @@ venv_ml/
 # Generated files
 interface/license_plate_results.txt
 
+# Generated images
+interface/need_verification/
