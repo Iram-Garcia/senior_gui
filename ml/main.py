@@ -4,7 +4,7 @@ import easyocr
 import time
 import os
 import shutil
-import picamera
+#import picamera
 import serial
 
 # Load YOLO model
