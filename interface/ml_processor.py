@@ -1,11 +1,11 @@
 import os
 import time
 import threading
-import serial
+#import serial
 import cv2
 from ultralytics import YOLO
 import easyocr
-import picamera
+#import picamera
 import shutil
 import logging
 
@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Folder paths (relative to project root)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INTERFACE_DIR = os.path.join(BASE_DIR, 'interface')
 LOG_FILE = os.path.join(INTERFACE_DIR, 'license_plate_results.txt')
 VERIFICATION_FOLDER = os.path.join(INTERFACE_DIR, 'need_verification')

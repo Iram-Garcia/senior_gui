@@ -1,101 +1,144 @@
 # senior_gui
 
-## Setting Up Python Virtual Environments
+## Overview
 
-This project uses two separate Python virtual environments:
+This repository contains two main parts that require separate Python virtual environments:
 
-- One for the `interface` folder
-- One for the `ml` folder
+- interface (Streamlit front-end)
+- ml (machine learning code)
 
-Follow these steps to set up each environment and install dependencies:
+Below are concise, cross-platform instructions to create and use virtual environments for each folder and to run the Streamlit app.
 
-### 1. Interface Environment
+## Prerequisites
 
-1. Open a terminal and navigate to the `interface` folder:
+- Python 3.8+ installed and on your PATH.
+- Optional but recommended: upgrade pip:
 
-    ```sh
-    cd interface
-    ```
+  ```sh
+  python -m pip install --upgrade pip
+  ```
 
-2. Create a new virtual environment (e.g., named `venv_interface`):
+## Creating and using virtual environments
 
-    ```sh
-    python -m venv venv_interface
-    ```
+General notes:
 
-3. Activate the environment:
-    - **Windows:**
+- Use distinct environments for `interface` and `ml`.
+- Recommended naming: `.venv_interface` and `.venv_ml` (dot-prefixed keeps them hidden on Unix-like systems).
 
-      ```sh
-      venv_interface\Scripts\activate
-      ```
+1. Interface environment
+   - Open a terminal and navigate to the interface folder:
 
-    - **macOS/Linux:**
+     ```sh
+     cd interface
+     ```
 
-      ```sh
-      source venv_interface/bin/activate
-      ```
+   - Create the venv:
 
-4. Install dependencies from `requirements.txt`:
+     ```sh
+     python -m venv .venv_interface
+     ```
 
-    ```sh
-    pip install -r requirements.txt
-    ```
+   - Activate the environment:
+     - Windows Command Prompt (cmd.exe):
 
-### 2. ML Environment
+       ```sh
+       .venv_interface\Scripts\activate
+       ```
 
-1. Open a new terminal and navigate to the `ml` folder:
+     - Windows PowerShell:
 
-    ```sh
-    cd ml
-    ```
+       ```powershell
+       .\.venv_interface\Scripts\Activate.ps1
+       ```
 
-2. Create a new virtual environment (e.g., named `venv_ml`):
+     - macOS / Linux (bash / zsh):
 
-    ```sh
-    python -m venv venv_ml
-    ```
+       ```sh
+       source .venv_interface/bin/activate
+       ```
 
-3. Activate the environment:
-    - **Windows:**
+   - Install dependencies:
 
-      ```sh
-      venv_ml\Scripts\activate
-      ```
+     ```sh
+     pip install -r requirements.txt
+     ```
 
-    - **macOS/Linux:**
+2. ML environment
+   - Open a new terminal and navigate to the ml folder:
 
-      ```sh
-      source venv_ml/bin/activate
-      ```
+     ```sh
+     cd ml
 
-4. Install dependencies from `requirements.txt`:
+     ```
 
-    ```sh
-    pip install -r requirements.txt
-    ```
+   - Create the venv:
 
-### Notes
+     ```sh
+     python -m venv .venv_ml
+     ```
 
-- Make sure you have Python installed (preferably Python 3.8+).
-- Always activate the correct environment before running code in its respective folder.
-- To deactivate an environment, simply run:
+   - Activate the environment (same variants as above, substituting `.venv_ml`).
+   - Install dependencies:
 
-    ```sh
-    deactivate
-    ```
+     ```sh
+     pip install -r requirements.txt
+     ```
 
-## Running the Application
+## Running the Streamlit application
 
-To run the Streamlit application:
+1. Activate the interface environment as shown above.
 
-1. Ensure you are in the `interface` folder and have activated the `venv_interface` environment (as described above).
-2. Run the following command:
+2. Run the Streamlit app (choose one):
 
-    ```sh
-    streamlit run home.py
-    ```
+   - From the interface folder (current behavior in this doc):
 
-3. The application should open in your default web browser.
+     ```sh
+     cd interface
+     streamlit run app.py
+     ```
 
-**Reminder:** Always activate the `venv_interface` environment before running the app to ensure the correct dependencies are used.
+   - From the repository root (explicit path, safer if you run from the repo root):
+
+     ```sh
+     streamlit run interface/app.py
+     ```
+
+3. By default Streamlit opens a browser; if not, check the terminal for the local URL (usually http://localhost:8501).
+
+If you prefer a specific port:
+
+```sh
+# from interface folder
+streamlit run app.py --server.port 8502
+
+# or from repo root
+streamlit run interface/app.py --server.port 8502
+```
+
+Note: If your Streamlit entrypoint filename is different (e.g., app.py or main.py), replace "app.py" above with the actual filename.
+
+## Troubleshooting & tips
+
+- If activation fails on PowerShell, you may need to change the execution policy (run PowerShell as Admin):
+
+  ```powershell
+  Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+  ```
+
+- If dependencies fail, ensure you are using the correct Python version and that the venv is activated.
+- To deactivate an environment:
+
+  ```sh
+  deactivate
+  ```
+
+- If Streamlit reports missing packages, re-check `requirements.txt` and reinstall inside the activated venv:
+
+  ```sh
+  pip install -r requirements.txt
+  ```
+
+## Notes
+
+- Keep the correct venv activated for the folder you're working in.
+- Use separate terminals for interface and ml environments if you need to run both simultaneously.
