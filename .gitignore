@@ -1,7 +1,7 @@
 # Virtual environments
 venv_interface/
 venv_ml/
-
+venv_project/
 # Generated files
 interface/license_plate_results.txt
 
