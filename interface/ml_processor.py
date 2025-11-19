@@ -2,9 +2,17 @@ import os
 import time
 import threading
 #import serial
-import cv2
-from ultralytics import YOLO
-import easyocr
+# Defer/import heavy ML dependencies with clear error messages if missing
+try:
+    import cv2
+    from ultralytics import YOLO
+    import easyocr
+    _ML_DEPS_MISSING = False
+except Exception as _e:
+    cv2 = None
+    YOLO = None
+    easyocr = None
+    _ML_DEPS_MISSING = True
 #import picamera
 import shutil
 import logging
@@ -21,6 +29,9 @@ VERIFICATION_FOLDER = os.path.join(INTERFACE_DIR, 'need_verification')
 os.makedirs(INTERFACE_DIR, exist_ok=True)
 os.makedirs(VERIFICATION_FOLDER, exist_ok=True)
 
+# Keep captured images only when confidence < this threshold
+CONFIDENCE_SAVE_THRESHOLD = 0.5
+
 # Singleton class for ML processing and serial communication
 class MLProcessor:
     _instance = None
@@ -28,7 +39,21 @@ class MLProcessor:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(MLProcessor, cls).__new__(cls)
-            cls._instance.yolo_model = YOLO('LP-detection.pt')  # Adjust path if needed
+            # Ensure ML deps are available
+            if _ML_DEPS_MISSING:
+                raise RuntimeError(
+                    "Missing ML dependencies (cv2/ultralytics/easyocr). "
+                    "Install required packages in your environment, for example:\n"
+                    "pip install opencv-python-headless ultralytics easyocr\n"
+                    "Also ensure the model file 'LP-detection.pt' exists in the interface/ folder."
+                )
+
+            # Load YOLO model from the interface folder explicitly
+            model_path = os.path.join(INTERFACE_DIR, 'LP-detection.pt')
+            if not os.path.exists(model_path):
+                raise RuntimeError(f"YOLO model not found at {model_path}")
+
+            cls._instance.yolo_model = YOLO(model_path)
             cls._instance.ocr_reader = easyocr.Reader(['en'])
             cls._instance.latest_processed = None  # Store latest processed image path
             cls._instance.serial = None
@@ -80,14 +105,30 @@ class MLProcessor:
         except Exception as e:
             logger.error(f"PiCamera error: {e}")
             return
+        # Delegate processing of the captured file to the new helper
+        self.process_image_file(temp_img_path, image_file_name=image_file)
 
-        # Process image
+    def stop_serial(self):
+        """Close serial connection."""
+        if self.serial:
+            self.serial.close()
+            self.serial = None
+            logger.info("Serial connection closed")
+
+    def process_image_file(self, image_path: str, image_file_name: str = None):
+        """Process an existing image file with YOLO + OCR.
+
+        Parameters:
+        - image_path: path to the image file to process
+        - image_file_name: optional label/name used in logs
+        """
+        if image_file_name is None:
+            image_file_name = os.path.basename(image_path)
+
         start_time = time.time()
-        img = cv2.imread(temp_img_path)
+        img = cv2.imread(image_path)
         if img is None:
-            logger.error(f"Could not load captured image at {temp_img_path}")
-            if os.path.exists(temp_img_path):
-                os.remove(temp_img_path)
+            logger.error(f"Could not load image at {image_path}")
             return
 
         img = cv2.resize(img, (640, 480))
@@ -103,41 +144,70 @@ class MLProcessor:
 
             if license_plate_img.size > 0:
                 license_plate_img = cv2.convertScaleAbs(license_plate_img, alpha=1.3, beta=0)
-                result = self.ocr_reader.readtext(license_plate_img, detail=1)
-                if result:
-                    text = result[0][1]  # Extract text
-                    confidence = result[0][2]  # Extract confidence
+                try:
+                    result = self.ocr_reader.readtext(license_plate_img, detail=1)
+                    if result:
+                        text = result[0][1]  # Extract text
+                        confidence = result[0][2]  # Extract confidence
+                except Exception as e:
+                    logger.error(f"OCR error: {e}")
 
         end_time = time.time()
         execution_time = end_time - start_time
 
         # Save log
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        with open(LOG_FILE, "a") as file:
-            file.write(f"Image: {image_file}, Timestamp: {timestamp}, Execution Time: {execution_time:.2f}s, Text: {text}, Confidence: {confidence:.2f}\n")
-        logger.info(f"Processed {image_file}: Confidence = {confidence:.2f}, Text = {text}")
+        try:
+            with open(LOG_FILE, "a") as file:
+                file.write(f"Image: {image_file_name}, Timestamp: {timestamp}, Execution Time: {execution_time:.2f}s, Text: {text}, Confidence: {confidence:.2f}\n")
+        except Exception as e:
+            logger.error(f"Failed to write log: {e}")
+        logger.info(f"Processed {image_file_name}: Confidence = {confidence:.2f}, Text = {text}")
 
-        # Save image for verification if confidence < 0.5
-        if confidence < 0.5:
-            timestamp_filename = timestamp.replace(":", "_") + "_" + image_file
-            shutil.copy(temp_img_path, os.path.join(VERIFICATION_FOLDER, timestamp_filename))
-
-        # Save processed image with annotations
-        output_filename = f"processed_{timestamp.replace(':', '_')}_{image_file}"
+        # Save image for verification and keep files only when confidence < threshold
+        timestamp_filename = timestamp.replace(":", "_") + "_" + image_file_name
+        output_filename = f"processed_{timestamp.replace(':', '_')}_{image_file_name}"
         output_path = os.path.join(VERIFICATION_FOLDER, output_filename)
-        cv2.imwrite(output_path, img)
-        self.latest_processed = output_path
 
-        # Clean up temporary file
-        if os.path.exists(temp_img_path):
-            os.remove(temp_img_path)
+        saved_capture = None
+        saved_processed = None
+        deleted_original = False
 
-    def stop_serial(self):
-        """Close serial connection."""
-        if self.serial:
-            self.serial.close()
-            self.serial = None
-            logger.info("Serial connection closed")
+        if confidence < CONFIDENCE_SAVE_THRESHOLD:
+            # copy original capture for manual audit
+            try:
+                saved_capture = os.path.join(VERIFICATION_FOLDER, timestamp_filename)
+                shutil.copy(image_path, saved_capture)
+            except Exception as e:
+                logger.error(f"Failed to copy for verification: {e}")
+                saved_capture = None
+            # save processed/annotated image as well
+            try:
+                cv2.imwrite(output_path, img)
+                saved_processed = output_path
+                self.latest_processed = output_path
+            except Exception as e:
+                logger.error(f"Failed to save processed image: {e}")
+                saved_processed = None
+        else:
+            # high-confidence result: remove the captured file to conserve storage
+            try:
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+                    deleted_original = True
+            except Exception as e:
+                logger.debug(f"Could not remove capture {image_path}: {e}")
+
+        # Return a summary dict so callers can make decisions (e.g., move/delete files)
+        return {
+            'image_file_name': image_file_name,
+            'text': text,
+            'confidence': float(confidence),
+            'execution_time_s': execution_time,
+            'saved_capture': saved_capture,
+            'saved_processed': saved_processed,
+            'deleted_original': deleted_original,
+        }
 
 # Global processor instance
 processor = MLProcessor()
