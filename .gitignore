@@ -8,7 +8,7 @@ interface/license_plate_results.txt
 # Generated images
 interface/need_verification/
 
-# Interface-specific generated and environment files
+# Interface-specific generated and environment file
 interface/__pycache__/
 interface/*.py[cod]
 interface/*.pyo
