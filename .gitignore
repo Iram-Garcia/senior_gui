@@ -7,3 +7,53 @@ interface/license_plate_results.txt
 
 # Generated images
 interface/need_verification/
+
+# Interface-specific generated and environment files
+interface/__pycache__/
+interface/*.py[cod]
+interface/*.pyo
+interface/.venv/
+interface/venv/
+interface/venv_*/
+interface/env/
+interface/*.egg-info/
+interface/.env
+interface/.env.local
+interface/.vscode/
+interface/.idea/
+interface/.DS_Store
+interface/Thumbs.db
+
+# Notebook checkpoints and outputs
+interface/.ipynb_checkpoints/
+interface/*.ipynb
+
+# Model weights / checkpoints / serialized objects
+interface/*.h5
+interface/*.pt
+interface/*.pth
+interface/*.ckpt
+interface/*.model
+interface/*.bin
+interface/*.pkl
+interface/checkpoints/
+interface/models/
+
+# Databases, logs, caches and other generated files
+interface/*.sqlite3
+interface/*.db
+interface/*.log
+interface/cache/
+interface/tmp/
+interface/temp/
+
+# Frontend build artifacts / dependencies (if interface contains web UI)
+interface/node_modules/
+interface/dist/
+interface/build/
+interface/.parcel-cache/
+interface/.next/
+interface/.nuxt/
+
+# CSV / export results that are generated
+interface/*.csv
