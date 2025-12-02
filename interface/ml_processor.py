@@ -17,6 +17,13 @@ except Exception as _e:
 import shutil
 import logging
 
+# Import student database module for verification
+try:
+    from student_db import verify_scanned_plate, init_student_db
+    _STUDENT_DB_AVAILABLE = True
+except ImportError:
+    _STUDENT_DB_AVAILABLE = False
+
 # Setup logging for debugging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,8 +36,8 @@ VERIFICATION_FOLDER = os.path.join(INTERFACE_DIR, 'need_verification')
 os.makedirs(INTERFACE_DIR, exist_ok=True)
 os.makedirs(VERIFICATION_FOLDER, exist_ok=True)
 
-# Keep captured images only when confidence < this threshold
-CONFIDENCE_SAVE_THRESHOLD = 0.5
+# Keep captured images only when confidence < this threshold (images below 70% confidence need manual review)
+CONFIDENCE_SAVE_THRESHOLD = 0.70
 
 # Singleton class for ML processing and serial communication
 class MLProcessor:
@@ -198,6 +205,14 @@ class MLProcessor:
             except Exception as e:
                 logger.debug(f"Could not remove capture {image_path}: {e}")
 
+        # Verify against student database if available
+        student_match = None
+        if _STUDENT_DB_AVAILABLE and text != "No plate detected":
+            try:
+                student_match = verify_scanned_plate(text, float(confidence))
+            except Exception as e:
+                logger.error(f"Student verification error: {e}")
+
         # Return a summary dict so callers can make decisions (e.g., move/delete files)
         return {
             'image_file_name': image_file_name,
@@ -207,6 +222,7 @@ class MLProcessor:
             'saved_capture': saved_capture,
             'saved_processed': saved_processed,
             'deleted_original': deleted_original,
+            'student_match': student_match,  # New: student verification result
         }
 
 # Global processor instance
