@@ -63,7 +63,49 @@ h1, h2, h3, h4 { color: #333333 !important; }
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------
-# Title
+# Title and Subtitle
+# -------------------------------------------------------
+st.title("🚗 License Plate Verification System")
+st.markdown("""
+<div style="text-align: center; color: #ffffff; font-size: 1.2em; margin-bottom: 2em;">
+    Automated license plate detection, recognition, and student database verification
+</div>
+""", unsafe_allow_html=True)
+
+# -------------------------------------------------------
+# Statistics Dashboard
+# -------------------------------------------------------
+st.markdown("## 📊 System Overview")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    students = get_all_students()
+    st.metric("👥 Registered Students", len(students), "in database")
+
+with col2:
+    logs = get_verification_log(limit=100)
+    st.metric("🔍 Recent Scans", len(logs), "last 100 scans")
+
+with col3:
+    if logs:
+        matches = sum(1 for log in logs if log['match_found'])
+        match_rate = (matches / len(logs) * 100) if logs else 0
+        st.metric("✅ Match Rate", f"{match_rate:.1f}%", f"{matches}/{len(logs)} matched")
+    else:
+        st.metric("✅ Match Rate", "0%", "no data")
+
+with col4:
+    interface_dir = Path(__file__).parent
+    verification_folder = interface_dir / "need_verification"
+    if verification_folder.exists():
+        pending_images = len([f for f in verification_folder.iterdir() if f.is_file()])
+    else:
+        pending_images = 0
+    st.metric("⚠️ Pending Review", pending_images, "images needing manual check")
+
+# -------------------------------------------------------
+# Quick Action Cards
 # -------------------------------------------------------
 st.title("🛰️ Device Monitoring Dashboard")
 
@@ -159,8 +201,11 @@ chart_distance_data = st.session_state.distance_history[-CHART_POINTS_TO_SHOW:]
 distance_df = pd.DataFrame(chart_distance_data) 
 
 # -------------------------------------------------------
-# Hard-coded Device Coordinates
+# Device Map Section
 # -------------------------------------------------------
+st.markdown("## 🗺️ Device Monitoring")
+
+# Hard-coded Device Coordinates
 devices = {
     "Central Unit": (26.30527735920657, -98.16867744559505),
     "Trip Sensor": (26.30519793515766, -98.16865742630092),
