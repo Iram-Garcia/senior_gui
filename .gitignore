@@ -57,3 +57,6 @@ interface/.nuxt/
 
 # CSV / export results that are generated
 interface/*.csv
+
+# Ignore sensor data files
+interface/latest_sensor.json
