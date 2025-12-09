@@ -217,18 +217,18 @@ UNKNOWN99    | NULL       | 0           | 0.85       | 2024-12-02 14:31:00
 
 ## Files Created/Modified
 
-### New Files:
+### New Filesb
 
 1. **`student_db.py`** - Database module for student records and verification
 2. **`pages/verify.py`** - Completely revamped with 4-tab verification interface
 3. **`init_sample_students.py`** - Script to populate sample student data
 4. **`LP_VERIFICATION_GUIDE.md`** - Comprehensive technical documentation
 
-### Modified Files:
+### Modified Files
 
 1. **`ml_processor.py`** - Added automatic student verification on plate detection
 
-### Databases Created:
+### Databases Created
 
 1. **`students.db`** - New SQLite database with student records and verification logs
 
@@ -334,7 +334,7 @@ python init_sample_students.py
 
 ### File Structure & Components
 
-```
+```bash
 interface/
 ├── student_db.py                  # Database module (NEW)
 ├── ml_processor.py               # Updated with student verification
