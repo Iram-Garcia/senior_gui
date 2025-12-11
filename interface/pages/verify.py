@@ -4,6 +4,9 @@ Allows searching for students by license plate and viewing verification history.
 """
 import streamlit as st
 import pandas as pd
+import sqlite3
+import tempfile
+import os
 from student_db import (
     init_student_db, 
     verify_scanned_plate, 
@@ -20,14 +23,15 @@ init_student_db()
 def main():
     st.set_page_config(page_title="License Plate Verification", layout="wide")
     
-    st.title("🚗 License Plate Verification & Student Database")
+    st.title("License Plate Verification & Student Database")
     
-    # Create tabs for different sections
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "🔍 Verify Plate",
-        "👥 Student Database",
-        "📋 Verification History",
-        "➕ Add Student"
+    # Create tabs for different sections (added "DB Browser" tab)
+    tab1, tab2, tab3, tab4, tab_db = st.tabs([
+        "Verify Plate",
+        "Student Database",
+        "Verification History",
+        "Add Student",
+        "DB Browser"
     ])
     
     # ============================================================
@@ -248,6 +252,65 @@ def main():
             st.dataframe(df, use_container_width=True, hide_index=True, height=200)
         else:
             st.caption("No students registered yet.")
+ 
+    # ============================================================
+    # TAB DB: Lightweight Database Loader / Browser (copied behavior)
+    # ============================================================
+    with tab_db:
+        st.header("Database Browser")
+        st.markdown("Upload an SQLite database file, or provide a path to one on the server, then preview tables.")
+        
+        col_left, col_right = st.columns([2, 1])
+        with col_left:
+            uploaded = st.file_uploader("Upload SQLite file (.db/.sqlite)")
+            db_path = st.text_input("Or enter a path to an SQLite file on this machine:")
+        with col_right:
+            open_mode = st.radio("Open as:", ["Read-only", "Read / Write"])
+        
+        db_file = None
+        conn = None
+        if uploaded is not None:
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+            tmp.write(uploaded.getbuffer())
+            tmp.flush()
+            tmp.close()
+            db_file = tmp.name
+            st.success(f"Uploaded and opened temp DB: {os.path.basename(db_file)}")
+        elif db_path:
+            if os.path.exists(db_path):
+                db_file = db_path
+            else:
+                st.warning("Path does not exist. Please upload a DB or provide an existing path.")
+        
+        if db_file:
+            try:
+                if open_mode == "Read-only":
+                    conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
+                else:
+                    conn = sqlite3.connect(db_file)
+            except Exception as e:
+                st.error(f"Could not open DB: {e}")
+        
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+                tables = [r[0] for r in cur.fetchall()]
+                if not tables:
+                    st.info("No tables found in this database.")
+                else:
+                    table = st.selectbox("Choose a table to preview:", tables)
+                    if table:
+                        try:
+                            df = pd.read_sql_query(f'SELECT * FROM "{table}" LIMIT 500', conn)
+                            st.markdown(f"**Preview — table `{table}` (first 500 rows)**")
+                            st.dataframe(df, use_container_width=True)
+                            csv = df.to_csv(index=False).encode("utf-8")
+                            st.download_button("Download table as CSV", data=csv, file_name=f"{table}.csv", mime="text/csv")
+                        except Exception as e:
+                            st.error(f"Failed to read table `{table}`: {e}")
+            finally:
+                conn.close()
 
 
 if __name__ == "__main__":

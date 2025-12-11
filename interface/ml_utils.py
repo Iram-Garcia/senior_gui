@@ -1,4 +1,4 @@
-# ml_utils.py
+# ml_utils.py - FINAL WORKING VERSION (Minimal Fixes)
 """
 Machine Learning utilities: License Plate Detection (YOLOv8) + OCR (EasyOCR)
 Optimized for Raspberry Pi 5
@@ -7,6 +7,7 @@ import cv2
 import easyocr
 import torch
 import logging
+import numpy as np # Added for consistency in typing, even though not used for preprocessing
 from pathlib import Path
 from typing import Tuple, Optional
 
@@ -29,6 +30,13 @@ def load_models():
     if yolo_model is None:
         try:
             from ultralytics import YOLO
+            
+            # === FIX 1: YOLO/PyTorch Load Error ===
+            # This is mandatory for newer PyTorch versions to load the model securely.
+            from ultralytics.nn.tasks import DetectionModel
+            torch.serialization.add_safe_globals([DetectionModel])
+            # ======================================
+
             if not MODEL_PATH.exists():
                 raise FileNotFoundError(f"YOLO model not found at {MODEL_PATH}")
             yolo_model = YOLO(str(MODEL_PATH))
@@ -40,22 +48,25 @@ def load_models():
 
     if ocr_reader is None:
         try:
-            # language='en' for better plate reading, gpu=False for Pi
-            ocr_reader = easyocr.Reader(['en'], gpu=False, detector=False, recognizer=True)
-            logger.info("EasyOCR reader initialized")
+            # === FIX 2: EasyOCR 'get_textbox' Error ===
+            # Even though the original used detector=False, the current environment 
+            # requires detector=True to avoid the 'get_textbox' AttributeError.
+            ocr_reader = easyocr.Reader(['en'], gpu=False, detector=True, recognizer=True)
+            logger.info("EasyOCR reader initialized (Detector Enabled)")
         except Exception as e:
             logger.error(f"Failed to initialize EasyOCR: {e}")
             raise
 
 
-def detect_and_crop_license_plate(image_path: str) -> Tuple[Optional[cv2.UMat], float]:
+def detect_and_crop_license_plate(image_path: str) -> Tuple[Optional[np.array], float]:
     """
     Detect license plate using YOLOv8 and return cropped image + confidence.
-    Returns (cropped_img, best_confidence) or (None, 0.0)
+    NOTE: Using np.array type hint for cv2.imread compatibility.
     """
     global yolo_model
 
     try:
+        # NOTE: Using cv2.imread/numpy array for the image data
         results = yolo_model(image_path, conf=CONF_THRESHOLD, verbose=False)[0]
         if len(results.boxes) == 0:
             logger.info("No license plate detected")
@@ -67,6 +78,10 @@ def detect_and_crop_license_plate(image_path: str) -> Tuple[Optional[cv2.UMat], 
         x1, y1, x2, y2 = map(int, best_box.xyxy[0].cpu().numpy())
 
         img = cv2.imread(image_path)
+        if img is None:
+             logger.error(f"Could not read image file: {image_path}")
+             return None, 0.0
+             
         cropped = img[y1:y2, x1:x2]
 
         logger.info(f"License plate detected with confidence: {conf:.3f}")
@@ -77,14 +92,15 @@ def detect_and_crop_license_plate(image_path: str) -> Tuple[Optional[cv2.UMat], 
         return None, 0.0
 
 
-def ocr_license_plate(cropped_img) -> Tuple[str, float]:
+def ocr_license_plate(cropped_img: np.array) -> Tuple[str, float]:
     """
-    Perform OCR on cropped license plate.
-    Returns (plate_text, avg_confidence)
+    Perform OCR on cropped license plate using the raw image.
+    (REVERTED: Removed all preprocessing steps)
     """
     global ocr_reader
 
     try:
+        # Use the raw cropped image directly (as in the original working version)
         result = ocr_reader.readtext(cropped_img, detail=1, paragraph=False)
 
         if not result:

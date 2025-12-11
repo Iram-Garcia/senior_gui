@@ -39,15 +39,15 @@ def load_image(image_path):
 
 def main():
     st.set_page_config(page_title="Manual Review - Low Confidence", layout="wide")
-    st.title("🔍 Manual Review - Low Confidence Detections")
+    st.title("Manual Review - Low Confidence Detections")
     st.markdown("Review and correct license plates that the system detected with low confidence.")
     
     # Get images
     images = get_images_in_folder()
     
     if not images:
-        st.info("📭 No images to review. All detections have high confidence!")
-        st.success("✅ System is working well!")
+        st.info("No images to review. All detections have high confidence!")
+        st.success("System is working well!")
         return
     
     # Display summary
@@ -61,19 +61,19 @@ def main():
     with col3:
         st.write("")
         st.write("")
-        if st.button("🗑️ Clear All", help="Delete all images in the verification folder"):
+        if st.button("Clear All", help="Delete all images in the verification folder"):
             for img in images:
                 try:
                     img.unlink()
                 except Exception as e:
                     st.error(f"Failed to delete {img.name}: {e}")
-            st.success("✅ All images cleared!")
+            st.success("All images cleared!")
             st.rerun()
     
     st.divider()
     
     # Create tabs for browsing and bulk operations
-    tab1, tab2 = st.tabs(["📋 Review Images", "🛠️ Bulk Operations"])
+    tab1, tab2 = st.tabs(["Review Images", "Bulk Operations"])
     
     # ============================================================
     # TAB 1: Review Individual Images
@@ -104,14 +104,14 @@ def main():
                     st.image(img, use_container_width=True)
             
             with col_info:
-                st.subheader("📄 Image Details")
+                st.subheader("Image Details")
                 st.write(f"**Filename:** {selected_image.name}")
                 st.write(f"**Size:** {selected_image.stat().st_size / 1024:.1f} KB")
                 
                 # Extract plate text from filename if possible
                 filename = selected_image.name
                 st.divider()
-                st.subheader("🔤 Plate Text")
+                st.subheader("Plate Text")
                 
                 # Try to extract plate from filename (processed_TIMESTAMP_captured_image.jpg format)
                 parts = filename.split("_")
@@ -138,34 +138,34 @@ def main():
                 )
                 
                 st.divider()
-                st.subheader("✅ Actions")
+                st.subheader("Actions")
                 
                 col_verify, col_delete = st.columns(2)
                 
                 with col_verify:
-                    if st.button("🔍 Verify Plate", use_container_width=True, type="primary"):
+                    if st.button("Verify Plate", use_container_width=True, type="primary"):
                         if corrected_plate.strip():
                             result = verify_scanned_plate(corrected_plate.strip(), confidence)
                             
                             if result['match_found']:
                                 student = result['student_info']
-                                st.success("✅ **MATCH FOUND!**")
+                                st.success("MATCH FOUND!")
                                 st.write(f"**Student:** {student['name']}")
                                 st.write(f"**ID:** {student['student_id']}")
                                 st.write(f"**Vehicle:** {student['vehicle_color']}")
                                 st.write(f"**Plate:** {student['license_plate']}")
                             else:
-                                st.warning("⚠️ **NO MATCH**")
+                                st.warning("NO MATCH")
                                 st.write(f"Plate '{corrected_plate}' not found in database.")
                                 st.info("You can add this student if they are new.")
                         else:
                             st.error("Please enter a license plate.")
                 
                 with col_delete:
-                    if st.button("🗑️ Delete Image", use_container_width=True, type="secondary"):
+                    if st.button("Delete Image", use_container_width=True, type="secondary"):
                         try:
                             selected_image.unlink()
-                            st.success("✅ Image deleted.")
+                            st.success("Image deleted.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Failed to delete: {e}")
@@ -173,7 +173,7 @@ def main():
             st.divider()
             
             # Quick student lookup
-            st.subheader("👥 Quick Student Lookup")
+            st.subheader("Quick Student Lookup")
             students = get_all_students()
             if students:
                 st.write("Search student database:")
@@ -222,7 +222,7 @@ def main():
         st.markdown("Manage multiple images at once.")
         
         if len(images) > 0:
-            st.subheader(f"📊 All {len(images)} Images")
+            st.subheader(f"All {len(images)} Images")
             
             # Display all images as a list
             image_data = []
@@ -237,13 +237,13 @@ def main():
             st.dataframe(df_images, use_container_width=True, hide_index=True)
             
             st.divider()
-            st.subheader("⚙️ Bulk Actions")
+            st.subheader("Bulk Actions")
             
             col_action1, col_action2 = st.columns(2)
             
             with col_action1:
                 st.write("**Delete all images:**")
-                if st.button("🗑️ Clear All Images", type="secondary", use_container_width=True):
+                if st.button("Clear All Images", type="secondary", use_container_width=True):
                     count = 0
                     for img in images:
                         try:
@@ -251,14 +251,14 @@ def main():
                             count += 1
                         except Exception as e:
                             st.error(f"Failed to delete {img.name}: {e}")
-                    st.success(f"✅ Deleted {count} images.")
+                    st.success(f"Deleted {count} images.")
                     st.rerun()
             
             with col_action2:
                 st.write("**Export list:**")
                 csv = df_images.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="📥 Download as CSV",
+                    label="Download as CSV",
                     data=csv,
                     file_name="images_to_review.csv",
                     mime="text/csv",
@@ -268,7 +268,7 @@ def main():
             st.info("No images to manage.")
         
         st.divider()
-        st.subheader("📝 Statistics")
+        st.subheader("Statistics")
         col_stat1, col_stat2, col_stat3 = st.columns(3)
         
         with col_stat1:
@@ -282,8 +282,8 @@ def main():
                 st.metric("Total Size (KB)", "0")
         
         with col_stat3:
-            st.metric("Status", "✅ All Clear" if len(images) == 0 else f"⚠️ {len(images)} to review")
-
+            st.metric("Status", "All Clear" if len(images) == 0 else f"{len(images)} to review")
+    
 
 if __name__ == "__main__":
     main()

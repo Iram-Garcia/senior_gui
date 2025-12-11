@@ -8,12 +8,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 import pandas as pd 
 import altair as alt
+import re # <-- NEW: Import regex for robust cleaning
 
 # --- Configuration ---
 TIMEOUT_SECONDS = 30
 SENSOR_FILE = Path("latest_sensor.json")
-MAX_HISTORY_POINTS = 30 # Store last 30 readings (60 seconds)
-CHART_POINTS_TO_SHOW = 5 # Show last 5 points in the charts
+MAX_HISTORY_POINTS = 30 
+CHART_POINTS_TO_SHOW = 5 
 
 # -------------------------------------------------------
 # Page Configuration
@@ -63,11 +64,6 @@ h1, h2, h3, h4 { color: #333333 !important; }
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------
-# Title
-# -------------------------------------------------------
-st.title("🛰️ Device Monitoring Dashboard")
-
-# -------------------------------------------------------
 # Data Loading Functions
 # -------------------------------------------------------
 
@@ -75,11 +71,16 @@ def load_sensor_data():
     if SENSOR_FILE.exists():
         try:
             with open(SENSOR_FILE, "r") as f:
-                data = json.load(f)
+                raw_data = f.read() # <-- Read raw data for debug
+                data = json.loads(raw_data)
+            
+            raw_distance = data.get("distance", "N/A") # Raw value for debug display
+
             temp = data.get("temperature", "N/A")
             battery = data.get("battery", "N/A")
             distance = data.get("distance", "N/A") # Load distance
             last_update = data.get("last_update", None)
+            
             dt = None
             if last_update:
                 dt = datetime.fromisoformat(last_update.replace("Z", "+00:00")) 
@@ -87,19 +88,27 @@ def load_sensor_data():
             else:
                 last_update_str = "Never"
             
-            # Fix: Check if distance has unit and strip it before conversion
-            distance_val = distance
-            if isinstance(distance, str) and distance != "N/A":
-                 # Strip non-numeric characters (assuming unit is 'cm' or similar)
-                 distance_val = ''.join(filter(lambda x: x.isdigit() or x in ['.', '-'], distance))
-                 if not distance_val: distance_val = "N/A" # Handle case where only unit was present
+            # --- NEW ROBUST DISTANCE PARSING ---
+            distance_val = "N/A"
+            if isinstance(distance, (int, float)):
+                distance_val = distance # Already a number
+            elif isinstance(distance, str) and distance != "N/A":
+                 # Use regex to find the first floating point number in the string
+                 # This handles cases like "187.5cm", '"187.5"', or "Distance: 187.5"
+                 match = re.search(r'[-+]?\d*\.?\d+', distance)
+                 if match:
+                     distance_val = match.group(0)
+                 else:
+                     distance_val = "N/A" # Failed to find a number
 
-            # Use distance_val for conversion
-            return float(temp) if temp != "N/A" else None, float(battery) if battery != "N/A" else None, float(distance_val) if distance_val != "N/A" else None, last_update_str, dt
-        except:
-            # If any error occurs, return None for data fields
-            return None, None, None, "Error reading data", None
-    return None, None, None, "No data yet", None
+            # Return raw_data and raw_distance for debugging
+            return float(temp) if temp != "N/A" else None, float(battery) if battery != "N/A" else None, float(distance_val) if distance_val != "N/A" else None, last_update_str, dt, raw_data, raw_distance
+
+        except Exception as e:
+            # If JSON loading itself failed, we can't return much
+            # logging.error(f"Error loading JSON: {e}") # You can uncomment this if needed
+            return None, None, None, "Error reading data", None, None, None
+    return None, None, None, "No data yet", None, None, None
 
 def determine_status(temp, last_update_dt):
     is_online = temp is not None
@@ -120,7 +129,8 @@ def determine_status(temp, last_update_dt):
 # Load Data & Update Session State History
 # -------------------------------------------------------
 
-temp, battery, distance, last_update_str, last_update_dt = load_sensor_data() 
+# UPDATED: Unpack new return values including debug fields
+temp, battery, distance, last_update_str, last_update_dt, raw_json_data, raw_distance_val = load_sensor_data() 
 is_online, status_color, status_text = determine_status(temp, last_update_dt)
 
 # Initialize session state for history if it doesn't exist
@@ -155,7 +165,7 @@ if len(st.session_state.distance_history) > MAX_HISTORY_POINTS:
 chart_temp_data = st.session_state.temp_history[-CHART_POINTS_TO_SHOW:]
 temp_df = pd.DataFrame(chart_temp_data)
 
-chart_distance_data = st.session_state.distance_history[-CHART_POINTS_TO_SHOW:] 
+chart_distance_data = st.session_state.distance_history[-CHART_POINTS_TO_SHOW:]
 distance_df = pd.DataFrame(chart_distance_data) 
 
 # -------------------------------------------------------
@@ -193,6 +203,26 @@ with st.sidebar:
 # -------------------------------------------------------
 # Layout: Main Content
 # -------------------------------------------------------
+
+st.title("🛰️ Device Monitoring Dashboard")
+
+# --- NEW DEBUGGING SECTION ---
+with st.expander("🐛 Debug Information (Check This First If Data is Missing)"):
+    if raw_json_data:
+        st.write("#### Raw JSON File Content (`latest_sensor.json`):")
+        st.code(raw_json_data, language="json")
+        st.write(f"#### Raw 'distance' field from JSON:")
+        st.code(f'"{raw_distance_val}"')
+        st.write(f"#### Parsed Distance Value:")
+        st.code(f'{distance}')
+        if distance is None:
+             st.error("Parsing failed. Check the Raw 'distance' field above to see if it contains unexpected characters.")
+        else:
+            st.success("Distance successfully parsed!")
+    else:
+        st.info("No latest_sensor.json file found or error reading it.")
+st.markdown("---") 
+# --- END DEBUGGING SECTION ---
 
 ## 1. Top Status & Metrics
 st.subheader("Central Unit Status")
@@ -243,7 +273,7 @@ with col_bat:
     else:
         st.metric(label="Battery Level", value="N/A", delta="Offline")
 
-# Distance Metric (NEW)
+# Distance Metric
 with col_dist:
     if is_online and distance is not None:
         if distance <= 10.0:
@@ -302,7 +332,7 @@ st.subheader("📏 Live Distance History")
 if not distance_df.empty:
     chart_distance = alt.Chart(distance_df).mark_line(point=True).encode(
         x=alt.X('Time', axis=alt.Axis(labelAngle=0)), 
-        y=alt.Y('Distance', title='Distance (cm)'), # Updated label
+        y=alt.Y('Distance', title='Distance (cm)'),
         color=alt.value("#4682B4"), 
         tooltip=['Time', 'Distance']
     ).properties(

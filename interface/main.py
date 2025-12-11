@@ -1,165 +1,193 @@
-# main.py → Laptop Testing Version (NO camera, NO picamera2, NO opencv)
+# main.py - FINAL PRODUCTION VERSION FOR RASPBERRY PI 5
+# Works for any user (magnus, pi, etc.) — no hardcoded paths!
+
 import serial
 import time
 import logging
 import os
 import json # Import json globally as it's used in the new function signature
+import cv2  # added: needed to save cropped images
 from datetime import datetime
 from pathlib import Path
+from picamera2 import Picamera2
 
-# Local imports (your existing files)
+# Local imports
 from ml_utils import load_models, detect_and_crop_license_plate, ocr_license_plate
 from student_db import verify_scanned_plate, init_student_db
 
+# ================== LOGGING (auto-saves next to this file) ==================
+SCRIPT_DIR = Path(__file__).parent.resolve()
+LOG_FILE = SCRIPT_DIR / "security_system.log"
+
 logging.basicConfig(
-  level=logging.INFO,
-  format='%(asctime)s | %(levelname)s | %(message)s',
-  handlers=[
-    logging.FileHandler("security_system.log"),
-    logging.StreamHandler()
-  ]
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
+logger.info("=== VEHICLE VERIFICATION SYSTEM STARTED ===")
+logger.info(f"Log file: {LOG_FILE}")
 
-# ================= CONFIGURATION =================
-SERIAL_PORT = "COM7"       # Change to your ESP32 COM port
-BAUD_RATE = 9600
+# ================== PATHS (all relative to script) ==================
+PHOTO_DIR = SCRIPT_DIR / "photos"
+FLAGGED_DIR = SCRIPT_DIR / "FLAGGED"
+SENSOR_JSON = SCRIPT_DIR / "latest_sensor.json"
 
-PHOTO_DIR = Path("photos")
-FLAGGED_DIR = Path("FLAGGED")
 PHOTO_DIR.mkdir(exist_ok=True)
 FLAGGED_DIR.mkdir(exist_ok=True)
 
-# Test image to use when trigger happens (drop any car photo here!)
-TEST_IMAGE_PATH = PHOTO_DIR / "test_car.jpg"  # ← Put a sample photo with visible plate here
+# ================== CONFIG ==================
+SERIAL_PORT = "/dev/ttyUSB0"
+BAUD_RATE = 9600
 
 previous_distance = None
+picam = Picamera2()
 
-# Shared sensor data for Streamlit
-def save_latest_sensor_data(temp: float, battery: float, distance: float): # <-- FIX 1: Added distance parameter
-  data = {
-    "temperature": temp,
-    "battery": battery,
-    "distance": distance, # <-- FIX 2: Added distance key
-    "last_update": datetime.now().isoformat()
-  }
-  # import json # Removed global import, moved to top
-  with open("latest_sensor.json", "w") as f:
-    json.dump(data, f)
-
-def parse_serial_line(line: str):
-  try:
-    # NOTE: The parsing assumes data is comma-separated floats, 
-    # but your print statement shows it separated by pipe (|) and key names (Distance:, Temp:, Battery:).
-    # The existing parsing logic is slightly flawed but works by stripping keys/units.
-    parts = line.strip().replace("Distance:", "").replace("Temperature:", "").replace("Battery:", "").split(",")
-    if len(parts) != 3:
-      return None, None, None
-    # The app.py side handles the 'cm' and '%' units, but stripping them here 
-        # simplifies the app.py regex slightly (though the current app.py handles it fine).
-    distance = float(parts[0].strip().replace("cm", "")) 
-    temp = float(parts[1].strip().replace("°F", ""))
-    battery = float(parts[2].strip().replace("%", ""))
-    return distance, temp, battery
-  except:
-    return None, None, None
-
-def fake_capture_photo() -> str:
-  """Instead of taking a photo → just pretend and use test image"""
-  timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-  fake_path = PHOTO_DIR / f"FAKE_{timestamp}.jpg"
-
-  # Copy the test image so the rest of the pipeline works normally
-  if TEST_IMAGE_PATH.exists():
-    import shutil
-    shutil.copy(TEST_IMAGE_PATH, fake_path)
-    print("Picture taken! (using test image)")
-    logger.info(f"FAKE photo created: {fake_path.name}")
-    return str(fake_path)
-  else:
-    # Fallback: create a blank image so ML doesn't crash
-    import cv2
-    import numpy as np
-    blank = np.zeros((480, 640, 3), dtype=np.uint8)
-    cv2.putText(blank, "NO TEST IMAGE", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
-    cv2.imwrite(str(fake_path), blank)
-    print("Picture taken! (blank test image - drop a real photo as photos/test_car.jpg)")
-    return str(fake_path)
-
-def main():
-  global previous_distance
-
-  logger.info("=== LAPTOP TESTING MODE ===")
-  logger.info("No camera → Using fake_capture_photo()")
-  init_student_db()
-  load_models()
-
-  try:
-    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-    logger.info(f"Connected to {SERIAL_PORT}")
-  except Exception as e:
-    logger.error(f"Cannot open serial port: {e}")
-    logger.error("Make sure ESP32 is connected and COM port is correct!")
-    return
-
-  print("\nSystem ready! Waiting for ESP32 data...\n")
-  print("Tip: Drop a clear photo of a car + license plate into photos/test_car.jpg for best testing!\n")
-
-  while True:
+# ================== SHARED SENSOR DATA FOR STREAMLIT ==================
+def save_latest_sensor_data(temp: float, battery: float):
+    data = {
+        "temperature": round(temp, 1),
+        "battery": round(battery, 1),
+        "last_update": datetime.now().isoformat()
+    }
     try:
-      if ser.in_waiting > 0:
-        line = ser.readline().decode('utf-8', errors='ignore').strip()
-        if "Distance:" in line:
-          distance, temp, battery = parse_serial_line(line)
-          if distance is None:
-            continue
+        import json
+        with open(SENSOR_JSON, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.error(f"Failed to write {SENSOR_JSON}: {e}")
 
-          print(f"Distance: {distance:.1f}cm | Temp: {temp}°F | Battery: {battery}%")
-          save_latest_sensor_data(temp, battery, distance) # <-- FIX 3: Passed distance
+# ================== SERIAL PARSING ==================
+def parse_serial_line(line: str):
+    try:
+        line = line.strip()
+        if not line.startswith("Distance:"):
+            return None, None, None
+        parts = line.replace("Distance:", "").replace("Temperature:", "").replace("Battery:", "").split(",")
+        if len(parts) != 3:
+            return None, None, None
+        distance = float(parts[0].strip())
+        temp = float(parts[1].strip())
+        battery = float(parts[2].strip().replace("%", ""))
+        return distance, temp, battery
+    except Exception:
+        return None, None, None
 
-          # Trigger when distance drops to ~half
-          if previous_distance and distance <= previous_distance / 2 + 5:
-            print("\nTRIGGERED! Vehicle detected close enough!\n")
-            photo_path = fake_capture_photo()
+# ================== CAMERA ==================
+def capture_photo() -> str | None:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    photo_path = PHOTO_DIR / f"{timestamp}.jpg"
+    try:
+        picam.capture_file(str(photo_path))
+        logger.info(f"Photo captured: {photo_path.name}")
+        return str(photo_path)
+    except Exception as e:
+        logger.error(f"Camera capture failed: {e}")
+        return None
 
-            # Run ML pipeline
-            cropped, yolo_conf = detect_and_crop_license_plate(photo_path)
-            if cropped is not None:
-              plate_text, ocr_conf = ocr_license_plate(cropped)
-              overall_conf = (yolo_conf + ocr_conf) / 2
+# ================== MAIN ==================
+def main():
+    global previous_distance
 
-              if plate_text:
-                result = verify_scanned_plate(plate_text, overall_conf)
-                if result['match_found']:
-                  os.remove(photo_path)
-                  print(f"AUTHORIZED → {result['student_info']['name']} ({plate_text})\n")
-                else:
-                  flagged = FLAGGED_DIR / Path(photo_path).name
-                  os.rename(photo_path, flagged)
-                  print(f"UNAUTHORIZED → FLAGGED: {plate_text}\n")
-              else:
-                flagged = FLAGGED_DIR / Path(photo_path).name
-                os.rename(photo_path, flagged)
-                print("No plate text → FLAGGED\n")
-            else:
-              flagged = FLAGGED_DIR / Path(photo_path).name
-              os.rename(photo_path, flagged)
-              print("No plate detected → FLAGGED\n")
+    init_student_db()
+    load_models()
 
-            time.sleep(4) # Avoid double-trigger
+    # Camera init
+    try:
+        picam.configure(picam.create_still_configuration())
+        picam.start()
+        time.sleep(2)
+        logger.info("PiCamera2 started successfully")
+    except Exception as e:
+        logger.critical(f"Camera failed: {e}")
+        return
 
-          previous_distance = distance
+    # Serial init
+    try:
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        logger.info(f"Serial connected: {SERIAL_PORT} @ {BAUD_RATE}")
+    except Exception as e:
+        logger.critical(f"Serial port error: {e}")
+        logger.critical("Run `sudo usermod -aG dialout magnus && sudo reboot` if needed")
+        return
 
-      time.sleep(0.05)
+    print("\nSYSTEM READY — Waiting for vehicle...\n")
+
+    try:
+        while True:
+            if ser.in_waiting > 0:
+                line = ser.readline().decode('utf-8', errors='ignore')
+                distance, temp, battery = parse_serial_line(line)
+                if distance is None:
+                    continue
+
+                print(f"Dist: {distance:6.1f}cm | Temp: {temp:5.1f}°F | Batt: {battery:5.1f}%")
+                save_latest_sensor_data(temp, battery)
+
+                # Trigger when car gets close (distance drops to ~half)
+                if (distance < 50):
+
+                    logger.info("VEHICLE DETECTED — Processing...")
+                    photo_path = capture_photo()
+                    if not photo_path:
+                        previous_distance = distance
+                        continue
+
+                    cropped, yolo_conf = detect_and_crop_license_plate(photo_path)
+                    if cropped is not None:
+                        plate_text, ocr_conf = ocr_license_plate(cropped)
+                        confidence = round((yolo_conf + ocr_conf) / 2, 3)
+
+                        if plate_text:
+                            result = verify_scanned_plate(plate_text, confidence)
+                            if result['match_found']:
+                                os.remove(photo_path)
+                                logger.info(f"AUTHORIZED: {result['student_info']['name']} — {plate_text}")
+                                print(f"   AUTHORIZED: {result['student_info']['name']}")
+                            else:
+                                flagged = FLAGGED_DIR / Path(photo_path).name
+                                os.rename(photo_path, flagged)
+                                logger.warning(f"UNAUTHORIZED → FLAGGED: {plate_text}")
+                                print(f"   UNAUTHORIZED → FLAGGED")
+                        else:
+                            # Save the cropped license-plate image into FLAGGED instead of moving the full photo
+                            flagged_name = f"{Path(photo_path).stem}_cropped.jpg"
+                            flagged = FLAGGED_DIR / flagged_name
+                            try:
+                                cv2.imwrite(str(flagged), cropped)
+                                # remove the original full photo to avoid duplicates
+                                os.remove(photo_path)
+                                logger.warning(f"No text recognized → FLAGGED (cropped saved: {flagged.name})")
+                                print("   No plate text → FLAGGED (cropped saved)")
+                            except Exception as e:
+                                # Fallback: move full photo if saving crop fails
+                                flagged_full = FLAGGED_DIR / Path(photo_path).name
+                                os.rename(photo_pasth, flagged_full)
+                                logger.error(f"Failed to save cropped image: {e} — moved full photo to FLAGGED")
+                                print("   No plate text → FLAGGED (full photo moved)")
+                    else:
+                        flagged = FLAGGED_DIR / Path(photo_path).name
+                        os.rename(photo_path, flagged)
+                        logger.warning("No plate detected → FLAGGED")
+                        print("   No plate detected → FLAGGED")
+
+                    time.sleep(4)  # Prevent rapid re-trigger
+
+                previous_distance = distance
+
+            time.sleep(0.05)
 
     except KeyboardInterrupt:
-      print("\nShutting down...")
-      break
+        print("\nShutting down...")
     except Exception as e:
-      logger.error(f"Error: {e}")
-      time.sleep(1)
-
-  ser.close()
+        logger.critical(f"Fatal error: {e}")
+    finally:
+        picam.stop()
+        ser.close()
+        logger.info("System stopped")
 
 if __name__ == "__main__":
-  main()
+    main()
