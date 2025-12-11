@@ -206,26 +206,7 @@ with st.sidebar:
 
 st.title("🛰️ Device Monitoring Dashboard")
 
-# --- NEW DEBUGGING SECTION ---
-with st.expander("🐛 Debug Information (Check This First If Data is Missing)"):
-    if raw_json_data:
-        st.write("#### Raw JSON File Content (`latest_sensor.json`):")
-        st.code(raw_json_data, language="json")
-        st.write(f"#### Raw 'distance' field from JSON:")
-        st.code(f'"{raw_distance_val}"')
-        st.write(f"#### Parsed Distance Value:")
-        st.code(f'{distance}')
-        if distance is None:
-             st.error("Parsing failed. Check the Raw 'distance' field above to see if it contains unexpected characters.")
-        else:
-            st.success("Distance successfully parsed!")
-    else:
-        st.info("No latest_sensor.json file found or error reading it.")
-st.markdown("---") 
-# --- END DEBUGGING SECTION ---
-
 ## 1. Top Status & Metrics
-st.subheader("Central Unit Status")
 st.markdown(f"## {status_color} **Device Status:** {status_text}")
 
 st.markdown("---")
@@ -388,7 +369,7 @@ else:
 
 # Footer & Auto-Refresh
 st.markdown("---")
-st.caption("Dashboard auto-refreshes every 2 seconds • Data from main.py via latest_sensor.json")
+st.caption("Dashboard auto-refreshes every 2 seconds")
 
 # -------------------------------------------------------
 # Auto-Refresh Mechanism
