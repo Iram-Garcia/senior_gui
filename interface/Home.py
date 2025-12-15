@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import pandas as pd 
 import altair as alt
-import re # <-- NEW: Import regex for robust cleaning
+import re 
 
 # --- Configuration ---
 TIMEOUT_SECONDS = 30
@@ -17,13 +17,10 @@ MAX_HISTORY_POINTS = 30
 CHART_POINTS_TO_SHOW = 5 
 
 # -------------------------------------------------------
-# Page Configuration
+# Page Configuration & Styling (UNCHANGED)
 # -------------------------------------------------------
 st.set_page_config(page_title="Device Dashboard", layout="wide")
 
-# -------------------------------------------------------
-# Enhanced Styling (White/Light Background, Orange Accents)
-# -------------------------------------------------------
 st.markdown("""
 <style>
 /* Main App Background (Now White/Light) */
@@ -68,47 +65,36 @@ h1, h2, h3, h4 { color: #333333 !important; }
 # -------------------------------------------------------
 
 def load_sensor_data():
+    """
+    Loads data directly from JSON. Handles null values from main.py 
+    (which represent N/A) by keeping them as Python None.
+    """
     if SENSOR_FILE.exists():
         try:
             with open(SENSOR_FILE, "r") as f:
-                raw_data = f.read() # <-- Read raw data for debug
+                raw_data = f.read() 
                 data = json.loads(raw_data)
             
-            raw_distance = data.get("distance", "N/A") # Raw value for debug display
-
-            temp = data.get("temperature", "N/A")
-            battery = data.get("battery", "N/A")
-            distance = data.get("distance", "N/A") # Load distance
+            # --- Extract Data Directly ---
+            temp = data.get("temperature", None)
+            battery = data.get("battery", None)
+            distance = data.get("distance", None)
             last_update = data.get("last_update", None)
             
+            last_update_str = "Never"
             dt = None
             if last_update:
                 dt = datetime.fromisoformat(last_update.replace("Z", "+00:00")) 
                 last_update_str = dt.strftime("%I:%M:%S %p")
-            else:
-                last_update_str = "Never"
             
-            # --- NEW ROBUST DISTANCE PARSING ---
-            distance_val = "N/A"
-            if isinstance(distance, (int, float)):
-                distance_val = distance # Already a number
-            elif isinstance(distance, str) and distance != "N/A":
-                 # Use regex to find the first floating point number in the string
-                 # This handles cases like "187.5cm", '"187.5"', or "Distance: 187.5"
-                 match = re.search(r'[-+]?\d*\.?\d+', distance)
-                 if match:
-                     distance_val = match.group(0)
-                 else:
-                     distance_val = "N/A" # Failed to find a number
-
-            # Return raw_data and raw_distance for debugging
-            return float(temp) if temp != "N/A" else None, float(battery) if battery != "N/A" else None, float(distance_val) if distance_val != "N/A" else None, last_update_str, dt, raw_data, raw_distance
+            # Return values: (temp, battery, distance, last_update_str, last_update_dt)
+            return temp, battery, distance, last_update_str, dt
 
         except Exception as e:
-            # If JSON loading itself failed, we can't return much
-            # logging.error(f"Error loading JSON: {e}") # You can uncomment this if needed
-            return None, None, None, "Error reading data", None, None, None
-    return None, None, None, "No data yet", None, None, None
+            st.warning(f"Error loading JSON data: {e}") 
+            return None, None, None, "Error reading data", None
+            
+    return None, None, None, "No data yet", None
 
 def determine_status(temp, last_update_dt):
     is_online = temp is not None
@@ -120,18 +106,18 @@ def determine_status(temp, last_update_dt):
         if time_diff.total_seconds() > TIMEOUT_SECONDS:
             is_online = False
     
-    status_color = "🟢" if is_online else "🔴"
+    # Emojis removed: Using status color text for distinction
+    status_color_prefix = "Status: "
     status_text = 'Online' if is_online else 'Offline / No Recent Data'
     
-    return is_online, status_color, status_text
+    return is_online, status_color_prefix, status_text
 
 # -------------------------------------------------------
 # Load Data & Update Session State History
 # -------------------------------------------------------
 
-# UPDATED: Unpack new return values including debug fields
-temp, battery, distance, last_update_str, last_update_dt, raw_json_data, raw_distance_val = load_sensor_data() 
-is_online, status_color, status_text = determine_status(temp, last_update_dt)
+temp, battery, distance, last_update_str, last_update_dt = load_sensor_data() 
+is_online, status_color_prefix, status_text = determine_status(temp, last_update_dt)
 
 # Initialize session state for history if it doesn't exist
 if 'temp_history' not in st.session_state:
@@ -140,15 +126,15 @@ if 'distance_history' not in st.session_state:
     st.session_state.distance_history = []
 
 # Update temperature history
-if is_online and temp is not None:
+if is_online and temp is not None and last_update_dt is not None:
     new_reading = {
         "Time": last_update_dt.strftime("%H:%M:%S"), 
         "Temperature": temp
     }
     st.session_state.temp_history.append(new_reading)
 
-# Update distance history (if distance is also valid)
-if is_online and distance is not None:
+# Update distance history 
+if is_online and distance is not None and last_update_dt is not None:
     new_distance_reading = {
         "Time": last_update_dt.strftime("%H:%M:%S"),
         "Distance": distance
@@ -169,7 +155,7 @@ chart_distance_data = st.session_state.distance_history[-CHART_POINTS_TO_SHOW:]
 distance_df = pd.DataFrame(chart_distance_data) 
 
 # -------------------------------------------------------
-# Hard-coded Device Coordinates
+# Hard-coded Device Coordinates (UNCHANGED)
 # -------------------------------------------------------
 devices = {
     "Central Unit": (26.30527735920657, -98.16867744559505),
@@ -186,10 +172,9 @@ avg_lon = sum(d["lon"] for d in data) / len(data)
 
 
 # -------------------------------------------------------
-# Layout: Sidebar
+# Layout: Sidebar (UNCHANGED)
 # -------------------------------------------------------
 
-# Sidebar for map controls
 with st.sidebar:
     st.header("Map Controls")
     st.write("Select the underlying map style.")
@@ -201,39 +186,38 @@ with st.sidebar:
 
 
 # -------------------------------------------------------
-# Layout: Main Content
+# Layout: Main Content (Emojis Removed)
 # -------------------------------------------------------
 
-st.title("🛰️ Device Monitoring Dashboard")
+st.title(" Device Monitoring Dashboard") # Emoji removed
 
 ## 1. Top Status & Metrics
-st.markdown(f"## {status_color} **Device Status:** {status_text}")
+# Display status text without emoji
+st.markdown(f"## **Device Status:** {status_text}")
 
 st.markdown("---")
 
-# UPDATED: 4 columns for metrics
 col_temp, col_bat, col_dist, col_update = st.columns(4) 
 
 # Temperature Metric
 with col_temp:
     if is_online and temp is not None:
-        # THRESHOLD: 130F for critical/fire warning
         if temp >= 130: 
-            temp_emoji = "🔥 CRITICAL"
+            temp_status = "CRITICAL"
             delta_color = "inverse"
         elif temp >= 90:
-            temp_emoji = "🌡️ Warning"
+            temp_status = "Warning"
             delta_color = "off"
         else:
-            temp_emoji = "🌤️ Normal"
+            temp_status = "Normal"
             delta_color = "normal"
             
         st.metric(label="Temperature", 
                   value=f"{temp:.1f}°F", 
-                  delta=temp_emoji,
+                  delta=temp_status,
                   delta_color=delta_color)
     else:
-        st.metric(label="Temperature", value="N/A", delta="Offline")
+        st.metric(label="Temperature", value="N/A", delta="Offline / Sensor Error")
 
 # Battery Metric
 with col_bat:
@@ -252,19 +236,19 @@ with col_bat:
                   delta=bat_delta,
                   delta_color=("inverse" if battery < 20 else "normal"))
     else:
-        st.metric(label="Battery Level", value="N/A", delta="Offline")
+        st.metric(label="Battery Level", value="N/A", delta="Offline / Sensor Error")
 
 # Distance Metric
 with col_dist:
     if is_online and distance is not None:
         if distance <= 10.0:
-            dist_delta = "🚨 Dangerously Close"
+            dist_delta = "Dangerously Close" # Emoji removed
             delta_color = "inverse"
         elif distance <= 50.0:
-            dist_delta = "⚠️ Close Proximity"
+            dist_delta = "Close Proximity" # Emoji removed
             delta_color = "off"
         else:
-            dist_delta = "✅ Safe Distance"
+            dist_delta = "Safe Distance" # Emoji removed
             delta_color = "normal"
             
         st.metric(label="Distance", 
@@ -272,7 +256,7 @@ with col_dist:
                   delta=dist_delta,
                   delta_color=delta_color)
     else:
-        st.metric(label="Distance", value="N/A", delta="Offline")
+        st.metric(label="Distance", value="N/A", delta="Offline / N/A")
 
 # Last Update Metric
 with col_update:
@@ -282,9 +266,9 @@ st.markdown("---")
 
 ## 2. Map View
 
-st.subheader("📍 Device Location Map")
+st.subheader(" Device Location Map") # Emoji removed
 
-# Map layer
+# Map layer (UNCHANGED)
 layer = pdk.Layer(
     "ScatterplotLayer",
     data,
@@ -307,9 +291,9 @@ st.pydeck_chart(deck)
 st.markdown("---")
 
 ## 3. Distance History Chart
-st.subheader("📏 Live Distance History")
+st.subheader(" Live Distance History") # Emoji removed
 
-# Ensure DataFrame has data before charting
+# Ensure DataFrame has data before charting (UNCHANGED)
 if not distance_df.empty:
     chart_distance = alt.Chart(distance_df).mark_line(point=True).encode(
         x=alt.X('Time', axis=alt.Axis(labelAngle=0)), 
@@ -320,7 +304,6 @@ if not distance_df.empty:
         title=f'Distance Trend (Last {CHART_POINTS_TO_SHOW} Readings)'
     ).interactive()
 
-    # Left-aligned, full width chart
     st.altair_chart(chart_distance, use_container_width=True, theme=None) 
 else:
     st.info("Waiting for distance data to populate the graph...")
@@ -328,9 +311,9 @@ else:
 st.markdown("---")
 
 ## 4. Temperature History Chart
-st.subheader("📊 Live Temperature History")
+st.subheader(" Live Temperature History") # Emoji removed
 
-# Ensure DataFrame has data before charting
+# Ensure DataFrame has data before charting (UNCHANGED)
 if not temp_df.empty:
     chart_temp = alt.Chart(temp_df).mark_line(point=True).encode(
         x=alt.X('Time', axis=alt.Axis(labelAngle=0)), 
@@ -341,20 +324,18 @@ if not temp_df.empty:
         title=f'Temperature Trend (Last {CHART_POINTS_TO_SHOW} Readings)'
     ).interactive()
 
-    # Left-aligned, full width chart
     st.altair_chart(chart_temp, use_container_width=True, theme=None) 
 else:
     st.info("Waiting for temperature data to populate the graph...")
 
 st.markdown("---")
 
-## 5. Recent Flagged Events (in an Expander)
-
+## 5. Recent Flagged Events
 flagged_dir = Path("FLAGGED")
 if flagged_dir.exists():
     flagged_images = sorted(flagged_dir.glob("*.jpg"), reverse=True)[:6]
     if flagged_images:
-        with st.expander("🚨 Recent Unauthorized Vehicle Detections"):
+        with st.expander("Recent Unauthorized Vehicle Detections"): # Emoji removed
             st.write("Images captured due to unauthorized vehicle presence.")
             
             cols = st.columns(min(len(flagged_images), 3)) 
@@ -367,12 +348,11 @@ else:
     st.info("Flagged image directory not found.")
 
 
-# Footer & Auto-Refresh
-st.markdown("---")
+# Footer & Auto-Refresh (UNCHANGED)
 st.caption("Dashboard auto-refreshes every 2 seconds")
 
 # -------------------------------------------------------
-# Auto-Refresh Mechanism
+# Auto-Refresh Mechanism (UNCHANGED)
 # -------------------------------------------------------
 time.sleep(2)
 st.rerun()

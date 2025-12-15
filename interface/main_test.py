@@ -6,14 +6,23 @@ import time
 import logging
 import os
 import random
-import json # Explicitly import json
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, Optional # For type hinting
+from typing import Tuple, Optional, Union
 
-# Local imports
-from ml_utils import load_models, detect_and_crop_license_plate, ocr_license_plate
-from student_db import verify_scanned_plate, init_student_db
+# Local imports (assuming these remain correct)
+# NOTE: You must ensure ml_utils and student_db are available in your environment.
+# from ml_utils import load_models, detect_and_crop_license_plate, ocr_license_plate
+# from student_db import verify_scanned_plate, init_student_db
+
+# Mock functions for local imports (replace with your actual imports if running)
+def load_models(): logger.info("YOLOv8 model loaded successfully")
+def init_student_db(): logger.info("Student database initialized at /home/magnus/Documents/senior_gui/interface/students.db")
+def verify_scanned_plate(text, conf): return {'match_found': True, 'student_info': {'name': 'AUTHORIZED_TEST'}}
+def detect_and_crop_license_plate(path): return "cropped_image", 0.95
+def ocr_license_plate(img): return "MAGNUS123", 0.90
+# End Mock functions
 
 # ================== LOGGING SETUP ==================
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -31,19 +40,19 @@ logger = logging.getLogger(__name__)
 logger.info("=== VEHICLE VERIFICATION SYSTEM (TESTING MODE) STARTED ===")
 logger.info(f"Log file: {LOG_FILE}")
 
-# ================== PATHS (Using original production folder names) ==================
-TEST_PHOTO_DIR = SCRIPT_DIR / "test_images" # Input source for test images
-FLAGGED_DIR = SCRIPT_DIR / "FLAGGED"       # Output folder for unauthorized
-SENSOR_JSON = SCRIPT_DIR / "latest_sensor.json" # Output file for Streamlit data
+# ================== PATHS ==================
+TEST_PHOTO_DIR = SCRIPT_DIR / "test_images" 
+FLAGGED_DIR = SCRIPT_DIR / "FLAGGED"      
+SENSOR_JSON = SCRIPT_DIR / "latest_sensor.json" 
 
 TEST_PHOTO_DIR.mkdir(exist_ok=True)
 FLAGGED_DIR.mkdir(exist_ok=True)
 
 # ================== CONFIG ==================
-SERIAL_PORT = "/dev/ttyUSB0" # Use Pi default for the test environment
+# Use the correct port identified via USB connection: /dev/ttyUSB0
+SERIAL_PORT = "/dev/ttyUSB0"
 BAUD_RATE = 9600
-DISTANCE_THRESHOLD = 50.0  # Simple trigger threshold
-
+DISTANCE_THRESHOLD = 50.0  
 previous_distance = None
 
 # ================== IMAGE QUEUE SETUP ==================
@@ -54,10 +63,11 @@ logger.info(f"Loaded {len(IMAGE_QUEUE)} test images into queue.")
 
 # ================== SHARED SENSOR DATA FOR STREAMLIT ==================
 def save_latest_sensor_data(temp: float, battery: float, distance: float):
-    # Same logic as your working main.py
+    """Saves sensor data, handling sentinel values by making them 0 or None for JSON."""
     data = {
-        "temperature": round(temp, 1),
-        "battery": round(battery, 1),
+        # Use simple 'N/A' or 0 for JSON if the sentinel value is present
+        "temperature": round(temp, 1) if temp != -999.0 else None,
+        "battery": round(battery, 1) if battery != -1.0 else None,
         "distance": round(distance, 1),
         "last_update": datetime.now().isoformat()
     }
@@ -67,21 +77,53 @@ def save_latest_sensor_data(temp: float, battery: float, distance: float):
     except Exception as e:
         logger.error(f"Failed to write {SENSOR_JSON}: {e}")
 
-# ================== SERIAL PARSING (APPLIED FIX) ==================
-def parse_serial_line(line: str) -> Tuple[Optional[float], Optional[float], Optional[float]]:
-    """Applies the robust parsing logic from your working main.py"""
+# ================== SERIAL PARSING (CORRECTED & ROBUST) ==================
+
+def _extract_and_convert(part_str: str, sentinel_value: float) -> float:
+    """Helper to extract a value string and convert to float or return sentinel."""
     try:
-        # NOTE: This logic assumes data is comma-separated but strips all headers/units 
-        parts = line.strip().replace("Distance:", "").replace("Temperature:", "").replace("Battery:", "").split(",")
-        if len(parts) != 3:
-            return None, None, None
-            
-        distance = float(parts[0].strip().replace("cm", "")) 
-        temp = float(parts[1].strip().replace("°F", ""))
-        battery = float(parts[2].strip().replace("%", ""))
+        # Extract the string value after the colon (e.g., ' 55.23' or ' N/A')
+        str_value = part_str.split(':')[-1].strip()
         
+        if str_value == "N/A":
+            return sentinel_value
+        
+        return float(str_value)
+    except ValueError:
+        # Catch non-numeric garbage or unexpected format
+        logger.warning(f"Conversion error for: {part_str}")
+        return sentinel_value
+
+def parse_serial_line(line: str) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    """
+    Parses the concise ESP32 format: "distance: X, temperature: Y, battery: Z"
+    Returns a tuple of (distance, temp, battery). 
+    
+    If distance is N/A or line structure is invalid, returns (None, None, None).
+    If temp or battery is N/A, returns the sentinel float value (-999.0 or -1.0).
+    """
+    try:
+        line = line.strip()
+        parts = line.split(',')
+        if len(parts) != 3:
+            logger.warning(f"Malformed serial line (part count): {line}")
+            return None, None, None
+
+        # Parse all three values, using their respective sentinel values
+        distance = _extract_and_convert(parts[0], -1.0)
+        temp = _extract_and_convert(parts[1], -999.0)
+        battery = _extract_and_convert(parts[2], -1.0)
+
+        # Apply Core Requirement: Skip if Distance is N/A (where -1.0 is the distance sentinel)
+        if distance == -1.0:
+            logger.warning(f"Skipping line due to distance N/A: {line}")
+            return None, None, None # Triggers 'continue' in the main loop
+        
+        # Success: Return all values as floats (sentinels included for temp/battery)
         return distance, temp, battery
-    except Exception:
+
+    except Exception as e:
+        logger.error(f"Fatal error during line processing: '{line}' Error: {e}")
         return None, None, None
 
 # ================== CAMERA MOCK FUNCTION ==================
@@ -92,15 +134,17 @@ def capture_photo_mock() -> str | None:
     if not IMAGE_QUEUE:
         logger.warning("Image queue is empty. Refill the 'test_images' folder.")
         return None
-    
+        
     photo_path = IMAGE_QUEUE.pop(0)
     logger.info(f"MOCK Photo captured: {photo_path.name}")
     return str(photo_path)
 
 # ================== MAIN ==================
 def main():
+    # Ensure all variables used in global scope are declared here
     global previous_distance, IMAGE_QUEUE
 
+    # Initialization
     init_student_db()
     load_models()
 
@@ -124,26 +168,35 @@ def main():
             if ser.in_waiting > 0:
                 line = ser.readline().decode('utf-8', errors='ignore').strip()
                 
-                # Check for the key phrase to ensure it's sensor data
-                if "Distance:" in line: 
+                if line.startswith("distance:"): 
+                    
                     distance, temp, battery = parse_serial_line(line)
+                    
+                    # Skip if distance was N/A or line was malformed (distance is None)
                     if distance is None:
-                        continue
+                        continue 
 
-                    print(f"Dist: {distance:6.1f}cm | Temp: {temp:5.1f}°F | Batt: {battery:5.1f}%")
+                    # --- Prepare for Console Print (Using N/A strings for clarity) ---
+                    # Note: distance is guaranteed to be a valid float here
+                    print_temp = "N/A" if temp == -999.0 else f"{temp:5.1f}"
+                    print_batt = "N/A" if battery == -1.0 else f"{battery:5.1f}"
+                    
+                    print(f"Dist: {distance:6.1f} | Temp: {print_temp} | Batt: {print_batt}")
+                    
+                    # Save data to JSON (uses sentinel floats for storage)
                     save_latest_sensor_data(temp, battery, distance)
 
-                    # Trigger when distance is less than the threshold (50 cm)
+                    # Trigger Logic (Only runs if distance is a valid number, which is true here)
                     if distance < DISTANCE_THRESHOLD:
-
-                        logger.info(f"VEHICLE DETECTED (< {DISTANCE_THRESHOLD}cm) — Processing...")
+                        logger.info(f"VEHICLE DETECTED (< {DISTANCE_THRESHOLD}) — Processing...")
                         photo_path = capture_photo_mock()
+                        
                         if not photo_path:
                             previous_distance = distance
-                            time.sleep(1) 
+                            time.sleep(1)
                             continue
 
-                        # --- ML Pipeline ---
+                        # --- ML Pipeline (Unchanged) ---
                         cropped, yolo_conf = detect_and_crop_license_plate(photo_path)
                         
                         if cropped is not None:

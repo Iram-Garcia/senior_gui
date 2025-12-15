@@ -12,7 +12,7 @@ from student_db import verify_scanned_plate, get_all_students
 # Get paths
 SCRIPT_DIR = Path(__file__).resolve().parent
 INTERFACE_DIR = SCRIPT_DIR.parent
-VERIFICATION_FOLDER = INTERFACE_DIR / "need_verification"
+VERIFICATION_FOLDER = INTERFACE_DIR / "FLAGGED"
 
 
 def get_images_in_folder():
